@@ -1,18 +1,16 @@
 ﻿system:
-    instructions: "You are an AI Agent for internal sales support. Provide coaching and summaries about Opportunities based on user requests."
+    instructions: "あなたは社内営業支援のためのAIエージェントです。ユーザーの依頼に基づき、商談に関するコーチングや要約を提供します。"
     messages:
         welcome: |
-            Hi, I'm Agentforce! I use AI to search trusted sources, and more. Ask me "What else can you do?" to see how I can simplify your workday. How can I help?
-        error: "Something went wrong. Try again."
-
+            こんにちは、Agentforceです。AIを活用して信頼できる情報源を検索するなど、さまざまな方法でサポートします。「他に何ができる？」と聞いていただくと、業務をどのように効率化できるかをご案内します。どのようにお手伝いしましょうか？
+        error: "問題が発生しました。もう一度お試しください。"
 
 config:
-    agent_label: "OpportunityReviewAgent2"
+    agent_label: "OpportunityReviewAgent"
     agent_template: "EmployeeCopilot__AgentforceEmployeeAgent"
-    developer_name: "OpportunityReviewAgent2"
+    developer_name: "OpportunityReviewAgent"
     agent_type: "AgentforceEmployeeAgent"
     description: |このエージェントは、営業担当者や営業部長が商談を壁打ちできる社内向け営業支援エージェントです。
-
 
         主な役割:
         - 商談や案件の分析
@@ -22,9 +20,7 @@ config:
         - 次回提案で押さえるべきことの提示
         - 次アクション案の提案
 
-
         このエージェントは、Slack 上での自然な会話を通じて、営業の思考整理と判断を支援します。
-
 
         担当する依頼例:
         - XX案件の分析をして
@@ -34,106 +30,141 @@ config:
         - 次回提案で押さえるべきことを教えて
         - 営業部長目線でレビューして
 
-
         担当しないこと:
         - 一般的なFAQ対応
         - 商談と無関係な雑談
         - 単なる短い要約だけを返す依頼
 
-
 language:
     default_locale: "ja"
-    additional_locales: "en_GB"
     all_additional_locales: False
 
-
 variables:
-    EndUserId: linked string
-        source: @MessagingSession.MessagingEndUserId
-        description: "This variable may also be referred to as MessagingEndUser Id"
-        visibility: "External"
-    RoutableId: linked string
-        source: @MessagingSession.Id
-        description: "This variable may also be referred to as MessagingSession Id"
-        visibility: "External"
-    ContactId: linked string
-        source: @MessagingEndUser.ContactId
-        description: "This variable may also be referred to as MessagingEndUser ContactId"
-        visibility: "External"
-    EndUserLanguage: linked string
-        source: @MessagingSession.EndUserLanguage
-        description: "This variable may also be referred to as MessagingSession EndUserLanguage"
-        visibility: "External"
     currentAppName: mutable string
-        description: "Salesforce Application Name"
+        description: "Salesforce アプリケーション名"
         visibility: "External"
+
     currentObjectApiName: mutable string
-        description: "The API name of the current Salesforce object"
+        description: "現在の Salesforce オブジェクトの API 参照名"
         visibility: "External"
+
     currentPageType: mutable string
-        description: "Page type (record, list, home)"
+        description: "ページ種別（record、list、home）"
         visibility: "External"
+
     currentRecordId: mutable string = ""
-        description: "The Salesforce ID of the current record"
+        description: "現在のレコードの Salesforce ID"
         visibility: "External"
-    VerifiedCustomerId: mutable string
-        description: "This variable may also be referred to as VerifiedCustomerId"
-        visibility: "Internal"
+
     extractedOpportunityName: mutable string = ""
-        description: "ユーザー発話から抽出した商談名。毎回ユーザー入力から抽出し直し、未設定の既存/コンテキスト依存参照は使用しない。"
+        description: "ユーザー発話から抽出した商談名。毎回ユーザー入力から抽出し直し、未設定の既存値やコンテキスト依存の参照は使用しない。"
         visibility: "Internal"
+
     enable_opportunity_coaching_routing: mutable boolean = True
-        description: "Feature toggle to enable routing to Opportunity_Coaching; defaults to True in Preview."
+        description: "Opportunity_Coaching へのルーティングを有効化するための機能トグル。Preview では既定で True。"
         visibility: "Internal"
+
     enable_opportunity_sf_read: mutable boolean = True
-        description: "Feature flag to enable read-only Salesforce Opportunity data fetch for coaching (default ON in Preview)."
+        description: "コーチング用に Salesforce Opportunity データの読み取り専用取得を有効化するための機能フラグ。Preview では既定で ON。"
         visibility: "Internal"
-    soql_query: mutable string = ""
-        description: "Composed SOQL to query a single Opportunity by Id or exact Name."
+
+    intent_category: mutable string
+        description: "start_agent でルーティングに使用するユーザー意図のカテゴリ"
+        visibility: "External"
+
+    next_action_message: mutable string = ""
+        description: "ユーザーメッセージから検出した、コーチング系の次アクション・相談の手がかり。該当しない場合は空。"
         visibility: "Internal"
-    user_query: mutable string = ""
-        description: "Raw user-supplied Opportunity Id or exact Name used to build SOQL."
-        visibility: "External"
-    intent_category: mutable string = "unknown"
-        description: "Category of user intent for routing in start_agent"
-        visibility: "External"
-knowledge:
-    rag_feature_config_id: ""
-    citations_url: ""
-    citations_enabled: False
 
+    summary_message: mutable string = ""
+        description: "ユーザーメッセージから検出した、要約系の手がかり。該当しない場合は空。"
+        visibility: "Internal"
 
+    user_message_text: mutable string = None
+        description: "直近ユーザー発話のテキスト本文。ルーター内で利用可能な文字列に正規化して設定する。"
+        visibility: "Internal"
 start_agent agent_router:
-    label: "Agent Router"
-    description: "Classify user intent (e.g., CRM導入案件のコーチング) and route to the appropriate subagent. This router only performs intent classification and transitions; it does not call external actions."
-    reasoning:
-        instructions: ->
-            | ユーザー意図/カテゴリを判定し、対応するサブエージェントに遷移してください。
-            | このルーターは分類とルーティングのみを行い、外部アクションは呼び出しません。
-            | 例: 「CRM導入案件のコーチング」「壁打ち」「競合対策」「失注リスク」「次アクション」等はコーチング意図です。
-            | 要約のみ（要約/サマリー/簡潔/3行で 等）はサマリー意図です。
-            | intent_category 変数が設定されていればそれを優先し、未設定の場合は上記キーワードによる簡易判定を行ってください。
-            if @variables.intent_category is not None and @variables.intent_category == "coaching":
-                transition to @subagent.Opportunity_Coaching
-            if @variables.intent_category is not None and @variables.intent_category == "summary":
-                transition to @subagent.Opportunity_Status_Summary
-            if @variables.enable_opportunity_coaching_routing == True:
-                transition to @subagent.Opportunity_Coaching
-        actions:
-            go_to_Opportunity_Coaching: @utils.transition to @subagent.Opportunity_Coaching
-            go_to_Opportunity_Status_Summary: @utils.transition to @subagent.Opportunity_Status_Summary
+   label: "Agent Router"
+   description: "Classify user intent and route to the appropriate subagent. This router only performs intent classification and transitions; it does not call external actions."
 
+   reasoning:
+      instructions: ->
+         # 入力正規化: 直近ユーザー発話を文字列 user_message_text に安全に設定
+         # 優先順位: user message from context -> ""
+         | ユーザーの直近メッセージ本文を直接参照するシステム変数は利用できません。以降の分類は user_message_text が空文字の場合も考慮してください。
+         set @variables.user_message_text = ""
+         |
+         # 先行キーワードチェック（最優先）。user_message_text に「コーチング」「壁打ち」「相談」「対策」「次」「アクション」「行動」「整理」のいずれかが含まれる場合は、intent_category を "coaching" に設定して即時 Opportunity_Coaching へ遷移。
+         if @variables.enable_opportunity_coaching_routing == True:
+             if @variables.user_message_text is not None and @variables.user_message_text != "":
+                 | 次のいずれかの語を含む場合にコーチングに分類します: コーチング, 壁打ち, 相談, 対策,次,アクション,行動,整理。
+             
+         |
+         | ユーザーの直近メッセージを読み取り、intent_category を必ず次のいずれかに分類してください：summary / coaching / unknown。
+         |
+         | ルール:
+         | - summary: 要約・サマリー・概要の依頼（例: 「要約して」「サマリーを出して」「まとめて」「概要を教えて」「3行で」など）
+         | - coaching: 商談の進め方、提案方針、競合対策、失注リスク、次回アクション、経営層向け訴求、ヒアリング観点などの相談
+         | - unknown: 上記いずれにも明確に該当しない場合
+         |
+         | 優先順位:
+         | - 「競合対策をまとめて」「失注リスクを3行で」「次回アクションを概要で」のように、summary系表現とcoaching系表現が混在する場合は coaching を優先してください。
+         | - 「3行で」は出力形式の指定です。内容がコーチングであれば coaching に分類してください。
+         |
+         | 明示ルール（軽量キーワード上書き）：
+         | - user_message_text に「要約」「サマリー」「まとめ」「概要」などが含まれる場合は summary_message を非空に設定します。
+         | - user_message_text に「コーチング」「壁打ち」「相談」「対策」「次」「アクション」「行動」「整理」などが含まれる場合は next_action_message を非空に設定します。
+         if @variables.user_message_text is not None and @variables.user_message_text != "":
+             | 上記ルールに従いキーワードを抽出し、該当する場合は summary_message または next_action_message を非空に設定します。
+         |
+         # 0) キーワード検出結果に基づき intent_category を明示的に設定（ガードロジック）。
+         if @variables.next_action_message is not None and @variables.next_action_message != "":
+             set @variables.intent_category = "coaching"
+         else:
+             if @variables.summary_message is not None and @variables.summary_message != "":
+                 set @variables.intent_category = "summary"
+             else:
+                 # どちらも非該当の場合は既存値を維持
+                 set @variables.intent_category = @variables.intent_category
+         |
+         | 指示: Always call set_intent_category before choosing a transition; do not transition if the variable is not updated。
+         |
+         # 1) まず intent_category を設定（分類結果を反映）。
+         run @actions.set_intent_category
+         |
+         # 2) intent_category が unknown であれば明確化のための短い質問を返し、Clarification に遷移。
+         if @variables.intent_category == "unknown":
+             | コーチングの相談ですか？それとも会話の要約が必要ですか？
+             transition to @subagent.Opportunity_Status_Summary # コメント: ここでは明確化のための分岐。要約/コーチングのどちらか選択を促します。
+         else:
+             # 3) intent_category が設定済みの場合のみガード付きで遷移。
+             if @variables.intent_category == "summary":
+                 transition to @subagent.Opportunity_Status_Summary
+             else:
+                 if @variables.intent_category == "coaching":
+                     transition to @subagent.Opportunity_Coaching
+                 else:
+                     # コメント: フォールバックの無条件コーチング遷移は削除。unknown は上の分岐で Clarification に誘導済み。
+                     | ルーターのフォールバックは行いません。intent_category を更新できない場合は Clarification 質問に誘導してください。
 
+      actions:
+         set_intent_category: @utils.setVariables
+             description: "intent_category 変数を分類結果で更新する（必ず最初に呼び出す）。"
+             with intent_category=...
+         go_to_Opportunity_Coaching: @utils.transition to @subagent.Opportunity_Coaching
+             description: "コーチング用サブエージェントへ遷移"
+             available when @variables.intent_category == "coaching"
+         go_to_Opportunity_Status_Summary: @utils.transition to @subagent.Opportunity_Status_Summary
+             description: "サマリー用サブエージェントへ遷移"
+             available when @variables.intent_category == "summary"
 connection slack:
     empty
-
 
 subagent Opportunity_Status_Summary:
     label: "Opportunity Status Summary"
     description: |
 
-
-        商談の主要項目をもとに、Slack投稿向けの簡潔な商談サマリを生成する。
+        商談の主要項目をもとに、Slack投稿向けの簡潔な商談サマリを生成する。要約系の依頼（「要約」「サマリー」「まとめて」「概要」「3行で」など）を受けた際の遷移先となるターゲットサブエージェントです。summary_message が検出され、ルーターで intent_category が "summary" に設定された場合に到達します。
     reasoning:
         instructions: ->
             |ユーザーが以下を明示的に要求した場合のみ、このサブエージェントを使用してください：
@@ -144,13 +175,12 @@ subagent Opportunity_Status_Summary:
              - XX案件を要約して
              - 商談を3行でまとめて
 
-
 subagent Opportunity_Coaching:
     label: "Opportunity Coaching"
     description: |
         特定の商談（例: 件名「函館コンサルティング_CRM導入案件」）について、必要なデータの取得・分析と、その結果に基づく次アクション案の生成をこのサブエージェント内で実行します。
         本サブエージェントが、商談データの取得/分析、現状整理、懸念点・見えていない観点の抽出、次回提案で押さえるべきこと、具体的な次アクションの提示までを一貫して担当します（ルーターでは実施しません）。
-        ユーザーが商談の進め方、提案方針、競合対策、失注リスク、次回アクション、経営層向け訴求、ヒアリング観点について相談したときに使用してください。
+        ユーザーが商談の進め方、提案方針、競合対策、失注リスク、次回アクション、経営層向け訴求、ヒアリング観点について相談したときに使用してください。next_action_message が検出され、ルーターで intent_category が "coaching" に設定された場合に到達します。
         たとえば、以下のような依頼に対応します。
         - この商談をどう進めるべきか壁打ちしたい
         - 競合対策を整理して
@@ -166,11 +196,16 @@ subagent Opportunity_Coaching:
             set @variables.currentRecordId = ""
         if @variables.enable_opportunity_sf_read is None:
             set @variables.enable_opportunity_sf_read = False
+        # Guard against running when summary intent is selected
+        if @variables.intent_category is not None and @variables.intent_category == "summary":
+            transition to @subagent.Opportunity_Status_Summary
     reasoning:
         instructions: ->
             | You are a B2B sales coaching agent.
             | Always answer in Japanese.
             | Keep the response concise and Slack-ready.
+            |
+            | コーチング意図の想定キーワード（ガード済み）: 「壁打ち」「コーチング」「対策」「次のアクション」。要約意図（「要約」「サマリー」「まとめて」「概要」「3行で」）が選択されている場合は、このサブエージェントは実行しないでください。
             |
             | 機能フラグ: {!@variables.enable_opportunity_sf_read} が False の場合は、外部データ取得を行わず、一般的なコーチングのみ返答する。
             |
@@ -228,7 +263,6 @@ subagent Opportunity_Coaching:
             if @variables.enable_opportunity_sf_read == False:
                 | 一般的なベストプラクティスに基づき、次の一手を提案します。
 
-
             if @variables.currentRecordId is not None and @variables.currentRecordId == "":
                 | 商談名が見つかりませんでした。正式名称を教えてください。
             if @variables.extractedOpportunityName is None or @variables.extractedOpportunityName == "":
@@ -236,7 +270,7 @@ subagent Opportunity_Coaching:
             else:
                 run @actions.get_opportunity_by_name
                                                                                                       with Input_OpportunityName=@variables.extractedOpportunityName
-                if @outputs.errorMessage is not None and @outputs.errorMessage == "":
+                if @outputs.errorMessage is not None and @outputs.errorMessage != "":
                     | 最新データが取得できませんでしたが、一般的な次の一手を提案します。
                 else:
                     if @outputs.Output_Found is not None and @outputs.Output_Found == False:
@@ -254,8 +288,6 @@ subagent Opportunity_Coaching:
         actions:
             get_opportunity_by_name: @actions.get_opportunity_by_name
                 with Input_OpportunityName = ...
-
-
 
 
     actions:
@@ -310,41 +342,8 @@ subagent Opportunity_Coaching:
                     complex_data_type_name: "lightning__textType"
                     is_displayable: False
                     filter_from_agent: False
-
-
-
-
-actions:
-    QueryOpportunityByIdOrName_OppCoach:
-        label: "Query Opportunity by Id or fuzzy Name"
-        description: "Read-only REST query to fetch Opportunity data via SOQL constructed into 'q' parameter. Returns Id, Name, StageName, Amount, CloseDate, Owner.Name, NextStep."
-        target: "api://SalesforceREST"
-        method: GET
-        path: "/services/data/v61.0/query"
-        queryParams:
-            q: string
-                is_required: True
-                from: @variables.soql_query
-                description: "SOQL query string"
-        outputs:
-            records: list[object]
-                label: "records"
-                description: "Matched Opportunity records"
-            errorMessage: string
-                label: "errorMessage"
-                description: "Error message if query failed"
-    QueryOpportunityByIdOrName_SOQL:
-        label: "Execute SOQL to fetch single Opportunity"
-        description: "Execute a SOQL query to fetch a single Opportunity by Id or exact Name via REST Query endpoint. Raw SOQL is passed via query param 'q'; platform will URL-encode."
-        target: "api://SalesforceREST"
-        method: GET
-        path: "/services/data/v61.0/query"
-        queryParams:
-            q: string
-                is_required: True
-                from: @variables.soql_query
-                description: "SOQL query string"
-        outputs:
-            response: object
-                label: "response"
-                description: "Raw HTTP JSON response including 'records' array"
+                Output_Amount: string
+                    label: "Output_Amount"
+                    complex_data_type_name: "lightning__textType"
+                    is_displayable: False
+                    filter_from_agent: False
