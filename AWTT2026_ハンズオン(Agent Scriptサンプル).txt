@@ -1,9 +1,10 @@
-﻿system:
+system:
     instructions: "あなたは社内営業支援のためのAIエージェントです。ユーザーの依頼に基づき、商談に関するコーチングや要約を提供します。"
     messages:
         welcome: |
             こんにちは、Agentforceです。AIを活用して信頼できる情報源を検索するなど、さまざまな方法でサポートします。「他に何ができる？」と聞いていただくと、業務をどのように効率化できるかをご案内します。どのようにお手伝いしましょうか？
         error: "問題が発生しました。もう一度お試しください。"
+
 
 config:
     agent_label: "OpportunityReviewAgent"
@@ -11,6 +12,7 @@ config:
     developer_name: "OpportunityReviewAgent"
     agent_type: "AgentforceEmployeeAgent"
     description: |このエージェントは、営業担当者や営業部長が商談を壁打ちできる社内向け営業支援エージェントです。
+
 
         主な役割:
         - 商談や案件の分析
@@ -20,7 +22,9 @@ config:
         - 次回提案で押さえるべきことの提示
         - 次アクション案の提案
 
+
         このエージェントは、Slack 上での自然な会話を通じて、営業の思考整理と判断を支援します。
+
 
         担当する依頼例:
         - XX案件の分析をして
@@ -30,150 +34,163 @@ config:
         - 次回提案で押さえるべきことを教えて
         - 営業部長目線でレビューして
 
+
         担当しないこと:
         - 一般的なFAQ対応
         - 商談と無関係な雑談
         - 単なる短い要約だけを返す依頼
 
+
 language:
     default_locale: "ja"
     all_additional_locales: False
+
 
 variables:
     currentAppName: mutable string
         description: "Salesforce アプリケーション名"
         visibility: "External"
 
+
     currentObjectApiName: mutable string
         description: "現在の Salesforce オブジェクトの API 参照名"
         visibility: "External"
+
 
     currentPageType: mutable string
         description: "ページ種別（record、list、home）"
         visibility: "External"
 
+
     currentRecordId: mutable string = ""
         description: "現在のレコードの Salesforce ID"
         visibility: "External"
+
 
     extractedOpportunityName: mutable string = ""
         description: "ユーザー発話から抽出した商談名。毎回ユーザー入力から抽出し直し、未設定の既存値やコンテキスト依存の参照は使用しない。"
         visibility: "Internal"
 
+
     enable_opportunity_coaching_routing: mutable boolean = True
         description: "Opportunity_Coaching へのルーティングを有効化するための機能トグル。Preview では既定で True。"
         visibility: "Internal"
+
 
     enable_opportunity_sf_read: mutable boolean = True
         description: "コーチング用に Salesforce Opportunity データの読み取り専用取得を有効化するための機能フラグ。Preview では既定で ON。"
         visibility: "Internal"
 
+
     intent_category: mutable string
         description: "start_agent でルーティングに使用するユーザー意図のカテゴリ"
         visibility: "External"
+
 
     next_action_message: mutable string = ""
         description: "ユーザーメッセージから検出した、コーチング系の次アクション・相談の手がかり。該当しない場合は空。"
         visibility: "Internal"
 
+
     summary_message: mutable string = ""
         description: "ユーザーメッセージから検出した、要約系の手がかり。該当しない場合は空。"
         visibility: "Internal"
 
+
     user_message_text: mutable string = None
         description: "直近ユーザー発話のテキスト本文。ルーター内で利用可能な文字列に正規化して設定する。"
         visibility: "Internal"
+
+
 start_agent agent_router:
-   label: "Agent Router"
-   description: "Classify user intent and route to the appropriate subagent. This router only performs intent classification and transitions; it does not call external actions."
+    label: "Agent Router"
+    description: "Classify user intent and route to the appropriate subagent. This router only performs intent classification and transitions; it does not call external actions."
 
-   reasoning:
-      instructions: ->
-         # 入力正規化: 直近ユーザー発話を文字列 user_message_text に安全に設定
-         # 優先順位: user message from context -> ""
-         | ユーザーの直近メッセージ本文を直接参照するシステム変数は利用できません。以降の分類は user_message_text が空文字の場合も考慮してください。
-         set @variables.user_message_text = ""
-         |
-         # 先行キーワードチェック（最優先）。user_message_text に「コーチング」「壁打ち」「相談」「対策」「次」「アクション」「行動」「整理」のいずれかが含まれる場合は、intent_category を "coaching" に設定して即時 Opportunity_Coaching へ遷移。
-         if @variables.enable_opportunity_coaching_routing == True:
-             if @variables.user_message_text is not None and @variables.user_message_text != "":
-                 | 次のいずれかの語を含む場合にコーチングに分類します: コーチング, 壁打ち, 相談, 対策,次,アクション,行動,整理。
-             
-         |
-         | ユーザーの直近メッセージを読み取り、intent_category を必ず次のいずれかに分類してください：summary / coaching / unknown。
-         |
-         | ルール:
-         | - summary: 要約・サマリー・概要の依頼（例: 「要約して」「サマリーを出して」「まとめて」「概要を教えて」「3行で」など）
-         | - coaching: 商談の進め方、提案方針、競合対策、失注リスク、次回アクション、経営層向け訴求、ヒアリング観点などの相談
-         | - unknown: 上記いずれにも明確に該当しない場合
-         |
-         | 優先順位:
-         | - 「競合対策をまとめて」「失注リスクを3行で」「次回アクションを概要で」のように、summary系表現とcoaching系表現が混在する場合は coaching を優先してください。
-         | - 「3行で」は出力形式の指定です。内容がコーチングであれば coaching に分類してください。
-         |
-         | 明示ルール（軽量キーワード上書き）：
-         | - user_message_text に「要約」「サマリー」「まとめ」「概要」などが含まれる場合は summary_message を非空に設定します。
-         | - user_message_text に「コーチング」「壁打ち」「相談」「対策」「次」「アクション」「行動」「整理」などが含まれる場合は next_action_message を非空に設定します。
-         if @variables.user_message_text is not None and @variables.user_message_text != "":
-             | 上記ルールに従いキーワードを抽出し、該当する場合は summary_message または next_action_message を非空に設定します。
-         |
-         # 0) キーワード検出結果に基づき intent_category を明示的に設定（ガードロジック）。
-         if @variables.next_action_message is not None and @variables.next_action_message != "":
-             set @variables.intent_category = "coaching"
-         else:
-             if @variables.summary_message is not None and @variables.summary_message != "":
-                 set @variables.intent_category = "summary"
-             else:
-                 # どちらも非該当の場合は既存値を維持
-                 set @variables.intent_category = @variables.intent_category
-         |
-         | 指示: Always call set_intent_category before choosing a transition; do not transition if the variable is not updated。
-         |
-         # 1) まず intent_category を設定（分類結果を反映）。
-         run @actions.set_intent_category
-         |
-         # 2) intent_category が unknown であれば明確化のための短い質問を返し、Clarification に遷移。
-         if @variables.intent_category == "unknown":
-             | コーチングの相談ですか？それとも会話の要約が必要ですか？
-             transition to @subagent.Opportunity_Status_Summary # コメント: ここでは明確化のための分岐。要約/コーチングのどちらか選択を促します。
-         else:
-             # 3) intent_category が設定済みの場合のみガード付きで遷移。
-             if @variables.intent_category == "summary":
-                 transition to @subagent.Opportunity_Status_Summary
-             else:
-                 if @variables.intent_category == "coaching":
-                     transition to @subagent.Opportunity_Coaching
-                 else:
-                     # コメント: フォールバックの無条件コーチング遷移は削除。unknown は上の分岐で Clarification に誘導済み。
-                     | ルーターのフォールバックは行いません。intent_category を更新できない場合は Clarification 質問に誘導してください。
 
-      actions:
-         set_intent_category: @utils.setVariables
-             description: "intent_category 変数を分類結果で更新する（必ず最初に呼び出す）。"
-             with intent_category=...
-         go_to_Opportunity_Coaching: @utils.transition to @subagent.Opportunity_Coaching
-             description: "コーチング用サブエージェントへ遷移"
-             available when @variables.intent_category == "coaching"
-         go_to_Opportunity_Status_Summary: @utils.transition to @subagent.Opportunity_Status_Summary
-             description: "サマリー用サブエージェントへ遷移"
-             available when @variables.intent_category == "summary"
+    reasoning:
+        instructions: ->
+            # 入力正規化
+            set @variables.user_message_text = ""
+
+
+            # 早期リターン: user_message_text が空の場合は明確化を促して終了
+            if @variables.user_message_text is None or @variables.user_message_text == "":
+                | コーチングの相談ですか？それとも会話の要約が必要ですか？
+                transition to @subagent.Opportunity_Status_Summary
+
+
+            # ここから下は user_message_text が存在する前提
+            | ユーザーの直近メッセージを読み取り、intent_category を必ず次のいずれかに分類してください：summary / coaching / unknown。
+            |
+            | ルール:
+            | - summary: 要約・サマリー・概要の依頼（例: 「要約して」「サマリーを出して」「まとめて」「概要を教えて」「3行で」など）
+            | - coaching: 商談の進め方、提案方針、競合対策、失注リスク、次回アクション、経営層向け訴求、ヒアリング観点などの相談
+            | - unknown: 上記いずれにも明確に該当しない場合
+            |
+            | 優先順位:
+            | - 「競合対策をまとめて」「失注リスクを3行で」のように summary 系と coaching 系が混在する場合は coaching を優先。
+            | - 「3行で」は出力形式の指定であり、内容がコーチングであれば coaching に分類。
+            |
+            | キーワード抽出:
+            | - 「要約」「サマリー」「まとめ」「概要」などが含まれる場合は summary_message を非空に設定。
+            | - 「コーチング」「壁打ち」「相談」「対策」「次」「アクション」「行動」「整理」などが含まれる場合は next_action_message を非空に設定。
+
+
+            # ガードロジック（フラット化）
+            if @variables.next_action_message is not None and @variables.next_action_message != "":
+                set @variables.intent_category = "coaching"
+
+
+            if (@variables.next_action_message is None or @variables.next_action_message == "") and @variables.summary_message is not None and @variables.summary_message != "":
+                set @variables.intent_category = "summary"
+
+
+            # intent_category を確定
+            run @actions.set_intent_category
+
+
+            # 遷移（フラット化）
+            if @variables.intent_category == "unknown":
+                | コーチングの相談ですか？それとも会話の要約が必要ですか？
+                transition to @subagent.Opportunity_Status_Summary
+
+
+            if @variables.intent_category == "summary":
+                transition to @subagent.Opportunity_Status_Summary
+
+
+            if @variables.intent_category == "coaching":
+                transition to @subagent.Opportunity_Coaching
+
+
+        actions:
+            set_intent_category: @utils.setVariables
+                description: "intent_category 変数を分類結果で更新する（必ず最初に呼び出す）。"
+                with intent_category=...
+            go_to_Opportunity_Coaching: @utils.transition to @subagent.Opportunity_Coaching
+                description: "コーチング用サブエージェントへ遷移"
+                available when @variables.intent_category == "coaching"
+            go_to_Opportunity_Status_Summary: @utils.transition to @subagent.Opportunity_Status_Summary
+                description: "サマリー用サブエージェントへ遷移"
+                available when @variables.intent_category == "summary"
+
+
 connection slack:
     empty
+
 
 subagent Opportunity_Status_Summary:
     label: "Opportunity Status Summary"
     description: |
-
         商談の主要項目をもとに、Slack投稿向けの簡潔な商談サマリを生成する。要約系の依頼（「要約」「サマリー」「まとめて」「概要」「3行で」など）を受けた際の遷移先となるターゲットサブエージェントです。summary_message が検出され、ルーターで intent_category が "summary" に設定された場合に到達します。
     reasoning:
         instructions: ->
-            |ユーザーが以下を明示的に要求した場合のみ、このサブエージェントを使用してください：
-             短い要約
-             簡潔な要約
-             3行要約
-             例:
-             - XX案件を要約して
-             - 商談を3行でまとめて
+            | ユーザーが以下を明示的に要求した場合のみ、このサブエージェントを使用してください：
+            | 短い要約・簡潔な要約・3行要約
+            | 例:
+            | - XX案件を要約して
+            | - 商談を3行でまとめて
+
 
 subagent Opportunity_Coaching:
     label: "Opportunity Coaching"
@@ -188,26 +205,26 @@ subagent Opportunity_Coaching:
         - この案件の失注リスクを見てほしい
         - 経営層向け観点で整理して
         - 見えていない論点を指摘して
+
+
     before_reasoning:
-        # Deterministic pre-checks to avoid None errors
         if @variables.extractedOpportunityName is None:
             set @variables.extractedOpportunityName = ""
         if @variables.currentRecordId is None:
             set @variables.currentRecordId = ""
         if @variables.enable_opportunity_sf_read is None:
             set @variables.enable_opportunity_sf_read = False
-        # Guard against running when summary intent is selected
         if @variables.intent_category is not None and @variables.intent_category == "summary":
             transition to @subagent.Opportunity_Status_Summary
+
+
     reasoning:
         instructions: ->
             | You are a B2B sales coaching agent.
             | Always answer in Japanese.
             | Keep the response concise and Slack-ready.
             |
-            | コーチング意図の想定キーワード（ガード済み）: 「壁打ち」「コーチング」「対策」「次のアクション」。要約意図（「要約」「サマリー」「まとめて」「概要」「3行で」）が選択されている場合は、このサブエージェントは実行しないでください。
-            |
-            | 機能フラグ: {!@variables.enable_opportunity_sf_read} が False の場合は、外部データ取得を行わず、一般的なコーチングのみ返答する。
+            | 要約意図（「要約」「サマリー」「まとめて」「概要」「3行で」）が選択されている場合は、このサブエージェントは実行しないでください。
             |
             | 事前処理:
             | - ユーザー入力から商談名（Opportunity 名）を抽出する
@@ -254,37 +271,44 @@ subagent Opportunity_Coaching:
             |
             | 次アクション案
             | - 営業担当者がすぐ動ける具体的な行動を最大3点
-            |
-            | 実行フロー:
-            | 1) 商談名/Id 解決
-            | 2) get_opportunity_by_name 実行
-            | 3) 正常 / 複数 / 失敗の分岐
-            | 4) コーチング生成 or フォールバック
+
+
+            # enable_opportunity_sf_read が False の場合は一般コーチングのみ
             if @variables.enable_opportunity_sf_read == False:
                 | 一般的なベストプラクティスに基づき、次の一手を提案します。
 
-            if @variables.currentRecordId is not None and @variables.currentRecordId == "":
-                | 商談名が見つかりませんでした。正式名称を教えてください。
+
+            # 商談名が未設定の場合は早期リターン
             if @variables.extractedOpportunityName is None or @variables.extractedOpportunityName == "":
                 | 商談名が見つかりませんでした。正式名称を教えてください。
-            else:
+
+
+            # 商談名が存在する場合にデータ取得・コーチング生成
+            if @variables.extractedOpportunityName is not None and @variables.extractedOpportunityName != "":
                 run @actions.get_opportunity_by_name
-                                                                                                      with Input_OpportunityName=@variables.extractedOpportunityName
-                if @outputs.errorMessage is not None and @outputs.errorMessage != "":
-                    | 最新データが取得できませんでしたが、一般的な次の一手を提案します。
-                else:
-                    if @outputs.Output_Found is not None and @outputs.Output_Found == False:
-                        | 該当する商談が見つかりませんでした。正式名称またはIdを教えてください。
-                    else:
-                        | 取得した商談データに基づき提案します。
-                        | 商談名: {!@outputs.Output_Name}
-                        | 取引先: {!@outputs.Output_AccountName}
-                        | ステージ: {!@outputs.Output_StageName}
-                        | 金額: {!@outputs.Output_Amount}
-                        | クローズ予定日: {!@outputs.Output_CloseDate}
-                        | 次の一手: {!@outputs.Output_NextStep}
-                        | 説明: {!@outputs.Output_Description}
-                        | 上記を踏まえて、テンプレートに沿って「商談の見立て」「懸念点」「見えていない観点」「次回提案で押さえるべきこと」「次アクション案」を具体化してください。
+                    with Input_OpportunityName=@variables.extractedOpportunityName
+
+
+            if @variables.extractedOpportunityName is not None and @variables.extractedOpportunityName != "" and @outputs.errorMessage is not None and @outputs.errorMessage != "":
+                | 最新データが取得できませんでしたが、一般的な次の一手を提案します。
+
+
+            if @variables.extractedOpportunityName is not None and @variables.extractedOpportunityName != "" and (@outputs.errorMessage is None or @outputs.errorMessage == "") and @outputs.Output_Found == False:
+                | 該当する商談が見つかりませんでした。正式名称またはIdを教えてください。
+
+
+            if @variables.extractedOpportunityName is not None and @variables.extractedOpportunityName != "" and (@outputs.errorMessage is None or @outputs.errorMessage == "") and @outputs.Output_Found == True:
+                | 取得した商談データに基づき提案します。
+                | 商談名: {!@outputs.Output_Name}
+                | 取引先: {!@outputs.Output_AccountName}
+                | ステージ: {!@outputs.Output_StageName}
+                | 金額: {!@outputs.Output_Amount}
+                | クローズ予定日: {!@outputs.Output_CloseDate}
+                | 次の一手: {!@outputs.Output_NextStep}
+                | 説明: {!@outputs.Output_Description}
+                | 上記を踏まえて、テンプレートに沿って「商談の見立て」「懸念点」「見えていない観点」「次回提案で押さえるべきこと」「次アクション案」を具体化してください。
+
+
         actions:
             get_opportunity_by_name: @actions.get_opportunity_by_name
                 with Input_OpportunityName = ...
@@ -347,3 +371,4 @@ subagent Opportunity_Coaching:
                     complex_data_type_name: "lightning__textType"
                     is_displayable: False
                     filter_from_agent: False
+
