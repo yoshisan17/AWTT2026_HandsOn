@@ -7,9 +7,9 @@ system:
 
 
 config:
-    agent_label: "OpportunityReviewAgent2"
+    agent_label: "OpportunityReviewAgent"
     agent_template: "EmployeeCopilot__AgentforceEmployeeAgent"
-    developer_name: "OpportunityReviewAgent2"
+    developer_name: "OpportunityReviewAgent"
     agent_type: "AgentforceEmployeeAgent"
     description: |このエージェントは、営業担当者や営業部長が商談を壁打ちできる社内向け営業支援エージェントです。
 
