@@ -7,9 +7,9 @@ system:
 
 
 config:
-    agent_label: "OpportunityReviewAgent"
+    agent_label: "OpportunityReviewAgent2"
     agent_template: "EmployeeCopilot__AgentforceEmployeeAgent"
-    developer_name: "OpportunityReviewAgent"
+    developer_name: "OpportunityReviewAgent2"
     agent_type: "AgentforceEmployeeAgent"
     description: |このエージェントは、営業担当者や営業部長が商談を壁打ちできる社内向け営業支援エージェントです。
 
@@ -112,12 +112,9 @@ start_agent agent_router:
             # 入力正規化
             set @variables.user_message_text = ""
 
-
-            # 早期リターン: user_message_text が空の場合は明確化を促して終了
-            if @variables.user_message_text is None or @variables.user_message_text == "":
-                | コーチングの相談ですか？それとも会話の要約が必要ですか？
-                transition to @subagent.Opportunity_Status_Summary
-
+            # キーワード抽出ルール
+            | ユーザーのメッセージ（@variables.user_message_text）を確認してください。
+            | もしメッセージの中に「対策」、「アクション」、「壁打ち」、「課題」、「観点」、「訴求」、「ポイント」のいずれかの言葉が含まれている場合は、変数 @variables.next_action_message に  coaching_detected" という文字列を設定してください。
 
             # ここから下は user_message_text が存在する前提
             | ユーザーの直近メッセージを読み取り、intent_category を必ず次のいずれかに分類してください：summary / coaching / unknown。
@@ -135,11 +132,9 @@ start_agent agent_router:
             | - 「要約」「サマリー」「まとめ」「概要」などが含まれる場合は summary_message を非空に設定。
             | - 「コーチング」「壁打ち」「相談」「対策」「次」「アクション」「行動」「整理」などが含まれる場合は next_action_message を非空に設定。
 
-
             # ガードロジック（フラット化）
             if @variables.next_action_message is not None and @variables.next_action_message != "":
                 set @variables.intent_category = "coaching"
-
 
             if (@variables.next_action_message is None or @variables.next_action_message == "") and @variables.summary_message is not None and @variables.summary_message != "":
                 set @variables.intent_category = "summary"
@@ -371,4 +366,3 @@ subagent Opportunity_Coaching:
                     complex_data_type_name: "lightning__textType"
                     is_displayable: False
                     filter_from_agent: False
-
