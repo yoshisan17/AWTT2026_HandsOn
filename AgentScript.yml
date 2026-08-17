@@ -1,0 +1,260 @@
+system:
+    instructions: |
+        あなたは社内営業支援のためのAIエージェントです。
+        商談に関する要約や営業コーチングを提供します。
+
+    messages:
+        welcome: |
+            こんにちは。商談の分析、要約、壁打ちを支援します。
+            どのようにお手伝いしましょうか？
+        error: |
+            問題が発生しました。もう一度お試しください。
+
+config:
+    developer_name: "OpportunityReviewAgent"
+    agent_label: "Opportunity Review Agent"
+    description: |
+        営業担当者や営業責任者の商談レビューを支援するエージェントです。
+    agent_type: "AgentforceEmployeeAgent"
+variables:
+    currentAppName: mutable string
+        description: "Salesforce アプリケーション名"
+        visibility: "External"
+
+    currentObjectApiName: mutable string
+        description: "現在の Salesforce オブジェクトの API 参照名"
+        visibility: "External"
+
+    currentPageType: mutable string
+        description: "ページ種別（record、list、home）"
+        visibility: "External"
+
+    currentRecordId: mutable string = ""
+        description: "現在のレコードの Salesforce ID"
+        visibility: "External"
+
+    extractedOpportunityName: mutable string = ""
+        description: "ユーザー発話から抽出した商談名"
+        visibility: "Internal"
+
+    enable_opportunity_sf_read: mutable boolean = True
+        description: "Salesforce Opportunity データ取得を有効化する"
+        visibility: "Internal"
+
+    opportunityFound: mutable boolean = False
+        description: "対象商談が見つかったか"
+        visibility: "Internal"
+
+    opportunityName: mutable string = ""
+        description: "取得した商談名"
+        visibility: "Internal"
+
+    opportunityAccountName: mutable string = ""
+        description: "取得した取引先名"
+        visibility: "Internal"
+
+    opportunityStageName: mutable string = ""
+        description: "取得した商談ステージ"
+        visibility: "Internal"
+
+    opportunityAmount: mutable string = ""
+        description: "取得した商談金額"
+        visibility: "Internal"
+
+    opportunityNextStep: mutable string = ""
+        description: "取得した次のステップ"
+        visibility: "Internal"
+
+    opportunityDescription: mutable string = ""
+        description: "取得した商談説明"
+        visibility: "Internal"
+
+    opportunityMessage: mutable string = ""
+        description: "Flowから返されたメッセージ"
+        visibility: "Internal"
+
+
+start_agent agent_router:
+    description: |
+        ユーザーの依頼内容を判定し、
+        商談要約または商談コーチングの
+        適切なサブエージェントへルーティングする。
+
+    model_config:
+        model: "model://sfdc_ai__DefaultEinsteinHyperClassifier"
+
+    reasoning:
+        instructions: |
+            ユーザーの依頼内容に応じて適切なサブエージェントを選択してください。
+
+            「要約」「サマリー」「概要」「3行でまとめて」など、
+            商談情報の要約を求めている場合は
+            Opportunity Status Summary を使用してください。
+
+            「壁打ち」「競合対策」「失注リスク」「次回アクション」
+            「提案方針」「営業部長目線」など、
+            商談に関する相談や分析を求めている場合は
+            Opportunity Coaching を使用してください。
+
+        actions:
+            go_to_summary: @utils.transition to @subagent.Opportunity_Status_Summary
+                description: |
+                    商談の要約、サマリー、概要、短いまとめを
+                    求められた場合に使用する。
+
+            go_to_coaching: @utils.transition to @subagent.Opportunity_Coaching
+                description: |
+                    商談の壁打ち、競合対策、失注リスク、
+                    次回アクション、提案方針などを
+                    求められた場合に使用する。
+
+
+connection slack:
+    empty
+
+
+subagent Opportunity_Status_Summary:
+    label: "Opportunity Status Summary"
+
+    description: |
+        商談についてユーザーが明示的に
+        要約、サマリー、概要、短いまとめを求めた場合に使用する。
+
+        例:
+        - XX案件を要約して
+        - 商談を3行でまとめて
+        - この商談の概要を教えて
+
+    reasoning:
+        instructions: |
+            常に日本語で回答してください。
+            商談情報を簡潔に整理してください。
+
+
+subagent Opportunity_Coaching:
+    label: "Opportunity Coaching"
+
+    description: |
+        特定の商談について、
+        商談の進め方、提案方針、競合対策、
+        失注リスク、次回アクション、
+        経営層向け訴求、ヒアリング観点などを
+        相談された場合に使用する。
+
+        例:
+        - この商談を壁打ちしたい
+        - 競合対策を整理して
+        - 次回提案で何を押さえるべきか
+        - この案件の失注リスクを見てほしい
+        - 営業部長目線でレビューして
+
+    #
+    # Flow Actionはこのsubagentのactions内で定義
+    #
+    actions:
+        get_opportunity_by_name:
+            label: "get_opportunity_by_name"
+
+            description: |
+                商談名から対応する商談を検索し、
+                商談の主要項目を取得します。
+
+            inputs:
+                Input_OpportunityName: string
+                    description: "検索対象となる商談名"
+                    is_required: True
+
+            outputs:
+                Output_AccountName: string
+                    description: "取引先名"
+
+                Output_Description: string
+                    description: "商談の説明"
+
+                Output_Found: boolean
+                    description: "対象商談が存在する場合はTrue"
+
+                Output_Message: string
+                    description: "検索結果に関するメッセージ"
+
+                Output_Name: string
+                    description: "商談名"
+
+                Output_NextStep: string
+                    description: "商談の次のステップ"
+
+                Output_StageName: string
+                    description: "商談ステージ"
+
+                Output_Amount: string
+                    description: "商談金額"
+
+            target: "flow://flowGetOpportunityByName"
+
+
+    reasoning:
+        instructions: ->
+            | あなたはB2B営業コーチングエージェントです。
+            | 常に日本語で回答してください。
+            | 回答はSlackで読みやすい簡潔な形式にしてください。
+            |
+            | ユーザーから商談の壁打ち、競合対策、
+            | 失注リスク、次回アクションなどの相談を受けた場合は、
+            | Salesforceの商談情報を取得して分析してください。
+            |
+            | 商談名がユーザー発話に含まれている場合は、
+            | その名称を省略・翻訳・言い換えずに使用してください。
+            |
+            | Salesforceから取得した情報は「事実」として扱ってください。
+            | Salesforceに存在しない内容を推測する場合は、
+            | 必ず「仮説」または「確認が必要」と明示してください。
+            |
+            | opportunityFound が False の場合は、
+            | 「該当する商談が見つかりませんでした。
+            | 正式な商談名を教えてください」と回答してください。
+            |
+            | opportunityFound が True の場合は、
+            | 以下の情報をもとに営業コーチングを行ってください。
+            |
+            | 商談名: {!@variables.opportunityName}
+            | 取引先: {!@variables.opportunityAccountName}
+            | ステージ: {!@variables.opportunityStageName}
+            | 金額: {!@variables.opportunityAmount}
+            | 次のステップ: {!@variables.opportunityNextStep}
+            | 説明: {!@variables.opportunityDescription}
+            |
+            | 回答は以下の構成にしてください。
+            |
+            | ■ 商談の見立て
+            | 最大3点
+            |
+            | ■ 懸念点
+            | 最大3点
+            |
+            | ■ 見えていない観点
+            | 最大3点
+            |
+            | ■ 次回提案で押さえるべきこと
+            | 最大3点
+            |
+            | ■ 次アクション案
+            | 最大3点
+
+        actions:
+            get_opportunity_by_name: @actions.get_opportunity_by_name
+                description: |
+                    ユーザーが特定の商談について
+                    壁打ち、分析、競合対策、失注リスク、
+                    次回アクションなどを求めた場合に、
+                    商談情報をSalesforceから取得します。
+
+                with Input_OpportunityName=...
+
+                set @variables.opportunityFound = @outputs.Output_Found
+                set @variables.opportunityName = @outputs.Output_Name
+                set @variables.opportunityAccountName = @outputs.Output_AccountName
+                set @variables.opportunityStageName = @outputs.Output_StageName
+                set @variables.opportunityAmount = @outputs.Output_Amount
+                set @variables.opportunityNextStep = @outputs.Output_NextStep
+                set @variables.opportunityDescription = @outputs.Output_Description
+                set @variables.opportunityMessage = @outputs.Output_Message
